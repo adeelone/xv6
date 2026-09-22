@@ -154,6 +154,9 @@ UPROGS=\
 	$U/_dorphan\
 	$U/_sync\
 	$U/_uptime\
+	$U/_time1\
+	$U/_matmul\
+	$U/_sleep\
 	$U/_loop1\
 	$U/_loop2\
 	$U/_loop3\

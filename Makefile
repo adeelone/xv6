@@ -155,6 +155,7 @@ UPROGS=\
 	$U/_sync\
 	$U/_uptime\
 	$U/_time1\
+	$U/_time\
 	$U/_matmul\
 	$U/_sleep\
 	$U/_loop1\

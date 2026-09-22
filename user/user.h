@@ -1,6 +1,7 @@
 #define SBRK_ERROR ((char *)-1)
 
 struct stat;
+struct rusage;
 
 // system calls
 int fork(void);
@@ -24,6 +25,7 @@ int getpid(void);
 char *sys_sbrk(int, int);
 int pause(int);
 int uptime(void);
+int wait2(int*, struct rusage*);
 int sync(void);
 
 // ulib.c

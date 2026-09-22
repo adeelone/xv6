@@ -450,6 +450,11 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+
+   #ifdef SCHED_TRACE
+	printk("scheduler: running pid %d (%s)\n", p->pid, p->name);   // <-- add this line
+   #endif
+
         swtch(&c->context, &p->context);
 
         // Don't re-enable interrupts on release.

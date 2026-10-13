@@ -428,8 +428,21 @@ kwait(uint64 addr)
   }
 }
 
+// Effective priority of p: the value the scheduler compares.
+// For now it is just the base priority (Task 5 adds aging here).
+// Caller should hold p->lock.
+int
+effpriority(struct proc *p)
+{
+  return p->priority;
+}
+
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
+// One of the two versions below is compiled in, chosen by
+// SCHEDPOLICY in param.h.
+#if SCHEDPOLICY == SCHED_RR
+// Original xv6 round-robin scheduler.
 // Scheduler never returns.  It loops, doing:
 //  - choose a process to run.
 //  - swtch to start running that process.
@@ -461,9 +474,9 @@ scheduler(void)
         p->state = RUNNING;
         c->proc = p;
 
-   #ifdef SCHED_TRACE
-	printk("scheduler: running pid %d (%s)\n", p->pid, p->name);   // <-- add this line
-   #endif
+#ifdef SCHED_TRACE
+        printk("scheduler: running pid %d (%s)\n", p->pid, p->name);
+#endif
 
         swtch(&c->context, &p->context);
 
@@ -483,6 +496,76 @@ scheduler(void)
     }
   }
 }
+
+#elif SCHEDPOLICY == SCHED_PRIORITY
+// Priority scheduler. Every time it picks a process it scans the whole
+// table and runs the RUNNABLE process with the highest effective
+// priority. Ties go to the process that has been ready the longest
+// (smallest readytime), so equal-priority processes take turns.
+void
+scheduler(void)
+{
+  struct proc *p, *best;
+  int besteff, eff;
+  uint bestready;
+  struct cpu *c = mycpu();
+
+  c->proc = 0;
+  for (;;) {
+    // Same interrupt dance as the round-robin scheduler.
+    intr_on();
+    intr_off();
+
+    // Pass 1: find the best candidate.
+    best = 0;
+    besteff = -1;
+    bestready = 0;
+    for (p = proc; p < &proc[NPROC]; p++) {
+      acquire(&p->lock);
+      if (p->state == RUNNABLE) {
+        eff = effpriority(p);
+        if (eff > besteff || (eff == besteff && p->readytime < bestready)) {
+          best = p;
+          besteff = eff;
+          bestready = p->readytime;
+        }
+      }
+      release(&p->lock);
+    }
+
+    if (best == 0) {
+      // nothing to run; stop running on this core until an interrupt.
+      asm volatile("wfi");
+      continue;
+    }
+
+    // Pass 2: lock the winner and make sure it is still RUNNABLE
+    // (its state could have changed after we released its lock).
+    p = best;
+    acquire(&p->lock);
+    if (p->state == RUNNABLE) {
+      p->state = RUNNING;
+      c->proc = p;
+
+#ifdef SCHED_TRACE
+      printk("scheduler: running pid %d (%s) prio %d eff %d\n",
+             p->pid, p->name, p->priority, besteff);
+#endif
+
+      swtch(&c->context, &p->context);
+
+      // Don't re-enable interrupts on release.
+      mycpu()->intena = 0;
+
+      // Process is done running for now.
+      c->proc = 0;
+    }
+    release(&p->lock);
+  }
+}
+#else
+#error "SCHEDPOLICY must be SCHED_RR or SCHED_PRIORITY (see param.h)"
+#endif
 
 // Switch to scheduler.  Must hold only p->lock
 // and have changed proc->state. Saves and restores

@@ -15,3 +15,13 @@
 
 // ---- PA2: priorities ----
 #define MAXPRIORITY    49      // highest base priority a process can set
+
+// ---- PA2: scheduler selection (compile-time) ----
+#define SCHED_RR       0   // original xv6 round-robin
+#define SCHED_PRIORITY 1   // highest priority runs first
+
+// Pick the policy here, or override from the command line:
+//   make qemu SCHED=SCHED_RR
+#ifndef SCHEDPOLICY
+#define SCHEDPOLICY SCHED_PRIORITY
+#endif

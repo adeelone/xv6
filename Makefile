@@ -72,6 +72,10 @@ CFLAGS += -mcmodel=medany
 ifdef TRACE
 CFLAGS += -DSCHED_TRACE
 endif
+# PA2: choose scheduler from the command line, e.g. make qemu SCHED=SCHED_RR
+ifdef SCHED
+CFLAGS += -DSCHEDPOLICY=$(SCHED)
+endif
 CFLAGS += -ffreestanding
 CFLAGS += -fno-common -nostdlib
 CFLAGS += -fno-builtin-strncpy -fno-builtin-strncmp -fno-builtin-strlen -fno-builtin-memset
@@ -165,6 +169,8 @@ UPROGS=\
 	$U/_ps\
 	$U/_pexec\
 	$U/_testprio\
+	$U/_schedtest\
+	$U/_spin\
 	
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

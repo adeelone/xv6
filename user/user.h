@@ -2,6 +2,7 @@
 
 struct stat;
 struct rusage;
+struct pstat;
 
 // system calls
 int fork(void);
@@ -26,6 +27,7 @@ char *sys_sbrk(int, int);
 int pause(int);
 int uptime(void);
 int wait2(int*, struct rusage*);
+int getprocs(struct pstat*);
 int sync(void);
 
 // ulib.c

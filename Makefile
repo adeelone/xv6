@@ -162,6 +162,7 @@ UPROGS=\
 	$U/_loop2\
 	$U/_loop3\
 	$U/_loop4\
+	$U/_ps\
 	
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

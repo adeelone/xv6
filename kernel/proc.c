@@ -770,3 +770,42 @@ kwait2(uint64 addr, uint64 raddr)
     acquire(&wait_lock);
   }
 }
+
+// Fill the user array at addr with one struct pstat for every process
+// that is in use. Returns the number of entries filled in, or -1.
+int
+kgetprocs(uint64 addr)
+{
+  struct proc *p;
+  struct proc *me = myproc();
+  struct pstat ps;
+  int n = 0;
+
+  // wait_lock protects p->parent; take it before any p->lock
+  // (same lock order as kwait()).
+  acquire(&wait_lock);
+  for (p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    // Skip free slots and half-built USED procs.
+    if (p->state == UNUSED || p->state == USED) {
+      release(&p->lock);
+      continue;
+    }
+    ps.pid = p->pid;
+    ps.state = p->state;
+    ps.size = p->sz;
+    ps.ppid = p->parent ? p->parent->pid : 0;
+    safestrcpy(ps.name, p->name, sizeof(ps.name));
+    release(&p->lock);
+
+    // copyout may sleep/fault, so do it without holding p->lock.
+    if (copyout(me->pagetable, me->sz, addr + n * sizeof(ps), (char *)&ps,
+                sizeof(ps)) < 0) {
+      release(&wait_lock);
+      return -1;
+    }
+    n++;
+  }
+  release(&wait_lock);
+  return n;
+}

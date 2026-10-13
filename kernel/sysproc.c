@@ -120,3 +120,13 @@ sys_wait2(void)
   argaddr(1, &rusage);
   return kwait2(status, rusage);
 }
+
+// PA2 Task 1: copy a struct pstat for every process into the
+// user array passed as argument 0. Returns the number of processes.
+uint64
+sys_getprocs(void)
+{
+  uint64 addr;
+  argaddr(0, &addr);
+  return kgetprocs(addr);
+}

@@ -168,6 +168,16 @@ main(void)
       cmd[strlen(cmd) - 1] = 0; // chop \n
       if (chdir(cmd + 3) < 0)
         fprintf(2, "cannot cd %s\n", cmd + 3);
+    } else if (memcmp(cmd, "getpriority\n", 12) == 0) {
+      // PA2 extra credit: like cd, this must run in the shell itself
+      // (not a forked child) so it reports the shell's own priority.
+      printf("%d\n", getpriority());
+    } else if (memcmp(cmd, "setpriority ", 12) == 0) {
+      // Changes the shell's priority. Every command the shell forks
+      // afterwards inherits it.
+      cmd[strlen(cmd) - 1] = 0; // chop \n
+      if (setpriority(atoi(cmd + 12)) < 0)
+        fprintf(2, "setpriority: priority must be 0..49\n");
     } else {
       if (fork1() == 0)
         runcmd(parsecmd(cmd));

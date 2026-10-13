@@ -25,3 +25,10 @@
 #ifndef SCHEDPOLICY
 #define SCHEDPOLICY SCHED_PRIORITY
 #endif
+
+// ---- PA2: aging ----
+#ifndef AGING
+#define AGING 1                // 1 = add aging to the priority scheduler
+#endif
+#define MAXEFFPRIORITY 99      // highest effective priority after aging
+#define AGINGTICKS     1       // +1 effective priority per AGINGTICKS ticks waited

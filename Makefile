@@ -76,6 +76,9 @@ endif
 ifdef SCHED
 CFLAGS += -DSCHEDPOLICY=$(SCHED)
 endif
+ifdef AGING
+CFLAGS += -DAGING=$(AGING)
+endif
 CFLAGS += -ffreestanding
 CFLAGS += -fno-common -nostdlib
 CFLAGS += -fno-builtin-strncpy -fno-builtin-strncmp -fno-builtin-strlen -fno-builtin-memset

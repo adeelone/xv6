@@ -18,7 +18,9 @@ struct pstat {
   int ppid;             // Parent process ID
   char name[16];        // Process command name
   int priority;         // Base priority (0..MAXPRIORITY)
+  int effpriority;      // Effective priority after aging
   uint readytime;       // Tick when the process became RUNNABLE
+  uint cputime;         // Ticks of CPU used so far (from PA1)
 };
 
 #endif

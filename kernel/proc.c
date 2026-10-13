@@ -428,13 +428,22 @@ kwait(uint64 addr)
   }
 }
 
-// Effective priority of p: the value the scheduler compares.
-// For now it is just the base priority (Task 5 adds aging here).
-// Caller should hold p->lock.
+// Effective priority of p = base priority plus a bonus for how long
+// it has been waiting in the ready queue (aging), capped at MAXEFFPRIORITY.
+// Only meaningful while p is RUNNABLE. Caller should hold p->lock.
 int
 effpriority(struct proc *p)
 {
-  return p->priority;
+  int eff = p->priority;
+#if SCHEDPOLICY == SCHED_PRIORITY && AGING
+  if (p->state == RUNNABLE) {
+    uint waited = ticks - p->readytime;   // the process's "age"
+    eff += waited / AGINGTICKS;
+  }
+#endif
+  if (eff > MAXEFFPRIORITY)
+    eff = MAXEFFPRIORITY;
+  return eff;
 }
 
 // Per-CPU process scheduler.
@@ -893,6 +902,8 @@ kgetprocs(uint64 addr)
     ps.ppid = p->parent ? p->parent->pid : 0;
     safestrcpy(ps.name, p->name, sizeof(ps.name));
     ps.priority = p->priority;
+    ps.effpriority = effpriority(p);
+    ps.cputime = p->cputime;
     ps.readytime = p->readytime;
     release(&p->lock);
 

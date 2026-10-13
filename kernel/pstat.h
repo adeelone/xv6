@@ -17,6 +17,7 @@ struct pstat {
   uint64 size;          // Size of process memory (bytes)
   int ppid;             // Parent process ID
   char name[16];        // Process command name
+  int priority;         // Base priority (0..MAXPRIORITY)
 };
 
 #endif

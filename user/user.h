@@ -28,6 +28,8 @@ int pause(int);
 int uptime(void);
 int wait2(int*, struct rusage*);
 int getprocs(struct pstat*);
+int getpriority(void);
+int setpriority(int);
 int sync(void);
 
 // ulib.c

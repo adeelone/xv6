@@ -163,6 +163,8 @@ UPROGS=\
 	$U/_loop3\
 	$U/_loop4\
 	$U/_ps\
+	$U/_pexec\
+	$U/_testprio\
 	
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

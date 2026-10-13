@@ -126,6 +126,7 @@ found:
   p->pid = allocpid();
   p->state = USED;
   p->cputime = 0;
+  p->priority = 0;   // default priority; kfork() overwrites with parent's
 
   // Allocate a trapframe page.
   if ((p->trapframe = (struct trapframe *)kalloc()) == 0) {
@@ -227,6 +228,7 @@ userinit(void)
 
   p->cwd = namei("/");
 
+  p->priority = 0;          // init starts at priority 0
   p->state = RUNNABLE;
 
   release(&p->lock);
@@ -290,6 +292,9 @@ kfork(void)
   np->cwd = idup(p->cwd);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
+
+  // Child inherits its parent's priority.
+  np->priority = p->priority;
 
   pid = np->pid;
 
@@ -796,6 +801,7 @@ kgetprocs(uint64 addr)
     ps.size = p->sz;
     ps.ppid = p->parent ? p->parent->pid : 0;
     safestrcpy(ps.name, p->name, sizeof(ps.name));
+    ps.priority = p->priority;
     release(&p->lock);
 
     // copyout may sleep/fault, so do it without holding p->lock.

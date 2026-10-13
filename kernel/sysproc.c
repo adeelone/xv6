@@ -130,3 +130,36 @@ sys_getprocs(void)
   argaddr(0, &addr);
   return kgetprocs(addr);
 }
+
+// PA2 Task 2: return the calling process's base priority.
+uint64
+sys_getpriority(void)
+{
+  struct proc *p = myproc();
+  int prio;
+
+  acquire(&p->lock);
+  prio = p->priority;
+  release(&p->lock);
+  return prio;
+}
+
+// PA2 Task 2: set the calling process's base priority.
+// Valid priorities are 0..MAXPRIORITY. Returns the old
+// priority, or -1 if the new one is out of range.
+uint64
+sys_setpriority(void)
+{
+  struct proc *p = myproc();
+  int prio, old;
+
+  argint(0, &prio);
+  if (prio < 0 || prio > MAXPRIORITY)
+    return -1;
+
+  acquire(&p->lock);
+  old = p->priority;
+  p->priority = prio;
+  release(&p->lock);
+  return old;
+}

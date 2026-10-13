@@ -90,6 +90,7 @@ struct proc {
   int pid;              // Process ID
   uint cputime;                // ticks this process has used
   int priority;                // base priority, 0 (lowest) .. MAXPRIORITY
+  uint readytime;              // value of ticks when state last became RUNNABLE
 
   // wait_lock must be held when using this:
   struct proc *parent; // Parent process

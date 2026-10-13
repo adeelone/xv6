@@ -18,6 +18,7 @@ struct pstat {
   int ppid;             // Parent process ID
   char name[16];        // Process command name
   int priority;         // Base priority (0..MAXPRIORITY)
+  uint readytime;       // Tick when the process became RUNNABLE
 };
 
 #endif

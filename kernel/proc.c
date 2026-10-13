@@ -127,6 +127,7 @@ found:
   p->state = USED;
   p->cputime = 0;
   p->priority = 0;   // default priority; kfork() overwrites with parent's
+  p->readytime = 0;
 
   // Allocate a trapframe page.
   if ((p->trapframe = (struct trapframe *)kalloc()) == 0) {
@@ -229,6 +230,7 @@ userinit(void)
   p->cwd = namei("/");
 
   p->priority = 0;          // init starts at priority 0
+  p->readytime = ticks;
   p->state = RUNNABLE;
 
   release(&p->lock);
@@ -305,6 +307,7 @@ kfork(void)
   release(&wait_lock);
 
   acquire(&np->lock);
+  np->readytime = ticks;
   np->state = RUNNABLE;
   release(&np->lock);
 
@@ -514,6 +517,7 @@ yield(void)
 {
   struct proc *p = myproc();
   acquire(&p->lock);
+  p->readytime = ticks;
   p->state = RUNNABLE;
   sched();
   release(&p->lock);
@@ -600,6 +604,9 @@ wakeup(void *chan)
       // If this waiting process has gotten so far as to actually
       // go to sleep, also set it back to RUNNING.
       if (p->state == SLEEPING) {
+        // Note: wakeup(&ticks) is called from clockintr() while it
+        // holds tickslock, so read ticks directly instead of locking.
+        p->readytime = ticks;
         p->state = RUNNABLE;
       }
     }
@@ -621,6 +628,7 @@ kkill(int pid)
       p->killed = 1;
       if (p->state == SLEEPING) {
         // Wake process from sleep().
+        p->readytime = ticks;
         p->state = RUNNABLE;
       }
       release(&p->lock);
@@ -802,6 +810,7 @@ kgetprocs(uint64 addr)
     ps.ppid = p->parent ? p->parent->pid : 0;
     safestrcpy(ps.name, p->name, sizeof(ps.name));
     ps.priority = p->priority;
+    ps.readytime = p->readytime;
     release(&p->lock);
 
     // copyout may sleep/fault, so do it without holding p->lock.

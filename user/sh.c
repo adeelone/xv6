@@ -176,7 +176,15 @@ main(void)
       // Changes the shell's priority. Every command the shell forks
       // afterwards inherits it.
       cmd[strlen(cmd) - 1] = 0; // chop \n
-      if (setpriority(atoi(cmd + 12)) < 0)
+      // atoi() reads "-1" or "abc" as 0, so check the text first.
+      char *arg = cmd + 12;
+      int ok = (arg[0] != 0), k;
+      for (k = 0; arg[k] != 0; k++)
+        if (arg[k] < '0' || arg[k] > '9')
+          ok = 0;
+      if (k > 2)
+        ok = 0;
+      if (!ok || setpriority(atoi(arg)) < 0)
         fprintf(2, "setpriority: priority must be 0..49\n");
     } else {
       if (fork1() == 0)

@@ -18,8 +18,15 @@ main(int argc, char *argv[])
         exit(-1);
     }
 
+    // atoi() reads "-1" or "abc" as 0, so check the text first.
+    int ok = (argv[1][0] != 0), k;
+    for(k=0; argv[1][k] != 0; k++)
+        if(argv[1][k] < '0' || argv[1][k] > '9')
+            ok = 0;
+    if(k > 2)
+        ok = 0;
     priority = atoi(argv[1]);
-    if(setpriority(priority) < 0){
+    if(!ok || setpriority(priority) < 0){
         printf("pexec: priority must be 0..%d\n", MAXPRIORITY);
         exit(-1);
     }

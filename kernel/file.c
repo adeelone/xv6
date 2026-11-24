@@ -159,6 +159,11 @@ filewrite(struct file *f, uint64 addr, int n)
 
       begin_op();
       ilock(f->ip);
+      // O_APPEND: find the end of file at every write, under the
+      // inode lock, so that no other writer can extend the file
+      // between reading the size and writing at it.
+      if (f->append)
+        f->off = f->ip->size;
       if ((r = writei(f->ip, 1, addr + i, f->off, n1)) > 0)
         f->off += r;
       iunlock(f->ip);

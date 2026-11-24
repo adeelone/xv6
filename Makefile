@@ -153,6 +153,7 @@ UPROGS=\
 	$U/_fstest\
 	$U/_appendtest\
 	$U/_mv\
+	$U/_renamecrash\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

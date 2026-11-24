@@ -1,8 +1,7 @@
 // mv: rename a file or directory.
-//   mv old new      rename old to new; if new is an existing directory
-//                   and old is not, or old is a directory and new is a
-//                   non-empty directory, old is moved into new instead
-//                   (like Unix mv).
+//   mv old new      rename old to new.  If new is an existing directory,
+//                   old is moved into it as new/<last part of old>, like
+//                   Unix mv.  Either way it is one atomic rename().
 #include "kernel/types.h"
 #include "kernel/stat.h"
 #include "kernel/fcntl.h"
@@ -46,11 +45,7 @@ main(int argc, char *argv[])
 
   strcpy(target, new);
   if (stat(new, &sn) == 0 && sn.type == T_DIR && so.ino != sn.ino) {
-    // new is a directory: move old into it, unless old is a directory
-    // that can replace new (i.e. new is empty).  rename() decides:
-    // try new itself first only when old is a directory.
-    if (so.type == T_DIR && rename(old, new) == 0)
-      exit(0);
+    // new is a directory: move old into it
     basename(old, base);
     if (strlen(new) + 1 + strlen(base) + 1 > MAXPATH) {
       fprintf(2, "mv: path too long\n");

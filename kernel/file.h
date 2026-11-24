@@ -19,6 +19,8 @@ struct inode {
   uint dev;              // Device number
   uint inum;             // Inode number
   int ref;               // Reference count
+  struct sleeplock alock; // serializes O_APPEND writes (PA5 E3); taken
+                          // before begin_op, never inside a transaction
   struct sleeplock lock; // protects everything below here
   int valid;             // inode has been read from disk?
 

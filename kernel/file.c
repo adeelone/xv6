@@ -152,6 +152,18 @@ filewrite(struct file *f, uint64 addr, int n)
     // and 2 blocks of slop for non-aligned writes.
     int max = ((MAXOPBLOCKS - 1 - 1 - 2) / 2) * BSIZE;
     int i = 0;
+
+    // O_APPEND writes larger than one chunk must still land as one
+    // contiguous piece.  The per-inode append lock keeps every other
+    // appender out until our last chunk is written.  Lock order:
+    //   alock  ->  begin_op()  ->  ilock
+    // alock is never acquired inside a transaction, so a process
+    // holding it may safely wait in begin_op(): nobody in the current
+    // transaction can be waiting for alock.  (Holding ilock across
+    // chunks instead would deadlock; see the PA5 report, E1.)
+    if (f->append)
+      acquiresleep(&f->ip->alock);
+
     while (i < n) {
       int n1 = n - i;
       if (n1 > max)
@@ -161,8 +173,9 @@ filewrite(struct file *f, uint64 addr, int n)
       ilock(f->ip);
       // O_APPEND: find the end of file at every write, under the
       // inode lock, so that no other writer can extend the file
-      // between reading the size and writing at it.
-      if (f->append)
+      // between reading the size and writing at it.  Later chunks of
+      // the same write continue right after the previous chunk.
+      if (f->append && (i == 0 || f->off > f->ip->size))
         f->off = f->ip->size;
       if ((r = writei(f->ip, 1, addr + i, f->off, n1)) > 0)
         f->off += r;
@@ -175,6 +188,8 @@ filewrite(struct file *f, uint64 addr, int n)
       }
       i += r;
     }
+    if (f->append)
+      releasesleep(&f->ip->alock);
     ret = (i == n ? n : -1);
   } else {
     panic("filewrite");

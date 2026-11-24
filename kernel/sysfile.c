@@ -383,6 +383,7 @@ sys_open(void)
   f->ip = ip;
   f->readable = !(omode & O_WRONLY);
   f->writable = (omode & O_WRONLY) || (omode & O_RDWR);
+  f->append = (omode & O_APPEND) && ip->type == T_FILE;
 
   if ((omode & O_TRUNC) && ip->type == T_FILE) {
     itrunc(ip);
@@ -527,4 +528,271 @@ sys_pipe(void)
     return -1;
   }
   return 0;
+}
+
+// ---------------------------------------------------------------- rename
+//
+// rename(old, new) moves the directory entry old to new in ONE log
+// transaction, so after a crash the disk shows either the old name or
+// the new one.
+//
+// Lock order (see the PA5 report for the argument):
+//   1. renamelock: a global sleep lock, taken BEFORE begin_op().  Only
+//      rename moves directories, so while it is held the shape of the
+//      directory tree cannot change.  That makes the ".." walks of the
+//      subtree check stable, and stops two renames from building a
+//      cycle together.
+//   2. begin_op().
+//   3. The two parent directories, ancestor first.  If neither is an
+//      ancestor of the other, either order is safe (see report).
+//   4. The source inode, then the target inode.  Before taking them we
+//      have checked that neither child is an ancestor of a locked
+//      parent, so every lock still goes from ancestor to descendant,
+//      the same rule namex, create and unlink follow.
+// The subtree checks themselves take at most one inode lock at a time,
+// like namex, and run before any parent is locked.
+
+static struct sleeplock renamelock;
+
+void
+renameinit(void)
+{
+  initsleeplock(&renamelock, "rename");
+}
+
+// Is a the same directory as d, or one of d's ancestors?
+// Walks ".." from d toward the root, one inode lock at a time.
+// Returns 1 if yes, 0 if no, -1 if d is not attached to the tree
+// (e.g. it was unlinked).  Caller holds renamelock, so directories
+// cannot move during the walk, and is inside a transaction.
+static int
+isancestor(struct inode *a, struct inode *d)
+{
+  struct inode *cur, *next;
+
+  cur = idup(d);
+  for (;;) {
+    if (cur == a) {
+      iput(cur);
+      return 1;
+    }
+    if (cur->inum == ROOTINO) {
+      iput(cur);
+      return 0;
+    }
+    ilock(cur);
+    if (cur->type != T_DIR || cur->nlink == 0) {
+      iunlockput(cur);
+      return -1;
+    }
+    next = dirlookup(cur, "..", 0);
+    iunlockput(cur);
+    if (next == 0)
+      return -1;
+    cur = next;
+  }
+}
+
+// Overwrite the directory entry at offset off in dp. dp must be locked.
+static int
+setdirent(struct inode *dp, uint off, char *name, uint inum)
+{
+  struct dirent de;
+
+  memset(&de, 0, sizeof(de));
+  if (name)
+    strncpy(de.name, name, DIRSIZ);
+  de.inum = inum;
+  if (writei(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de))
+    return -1;
+  return 0;
+}
+
+// Look name up in dp, taking dp's lock only for the lookup.
+static struct inode *
+lookup(struct inode *dp, char *name)
+{
+  struct inode *ip;
+
+  ilock(dp);
+  if (dp->type != T_DIR) {
+    iunlock(dp);
+    return 0;
+  }
+  ip = dirlookup(dp, name, 0);
+  iunlock(dp);
+  return ip;
+}
+
+#define RENAME_RETRIES 10
+
+uint64
+sys_rename(void)
+{
+  char old[MAXPATH], new[MAXPATH];
+  char oname[DIRSIZ], nname[DIRSIZ];
+  struct inode *odp, *ndp, *ip, *tp, *ip2, *tp2;
+  struct inode *first, *second;
+  uint ooff, noff;
+  int r, isdir, tries, a;
+
+  if (argstr(0, old, MAXPATH) < 0 || argstr(1, new, MAXPATH) < 0)
+    return -1;
+
+  for (tries = 0; tries < RENAME_RETRIES; tries++) {
+    odp = ndp = ip = tp = ip2 = tp2 = 0;
+    first = second = 0;
+    r = -1;
+
+    acquiresleep(&renamelock); // before begin_op: see comment above
+    begin_op();
+
+    // ---- phase 1: resolve names, no inode locks held between steps
+    if ((odp = nameiparent(old, oname)) == 0 ||
+        (ndp = nameiparent(new, nname)) == 0)
+      goto out;
+    if (namecmp(oname, ".") == 0 || namecmp(oname, "..") == 0 ||
+        namecmp(nname, ".") == 0 || namecmp(nname, "..") == 0)
+      goto out;
+    if (odp->dev != ndp->dev)
+      goto out;
+    if ((ip = lookup(odp, oname)) == 0) // old doesn't exist
+      goto out;
+    tp = lookup(ndp, nname); // may be 0
+    if (tp == ip) { // same name, or two hard links: no-op
+      r = 0;
+      goto out;
+    }
+
+    // ---- phase 2: tree-shape checks, under renamelock only
+    // new must not be inside old's subtree (also catches ip == ndp).
+    if ((a = isancestor(ip, ndp)) != 0)
+      goto out; // 1: would create a cycle; -1: ndp is detached
+    // the target must not be old's parent or one of its ancestors,
+    // e.g. rename("d/e/f", "d").  Such a target is a non-empty
+    // directory, so this is always an error; checking it here keeps us
+    // from ever locking an ancestor after its descendant.
+    if (tp && isancestor(tp, odp) != 0)
+      goto out;
+
+    // ---- phase 3: lock the parents, ancestor first
+    if (odp == ndp) {
+      first = odp;
+    } else if (isancestor(ndp, odp) == 1) {
+      first = ndp;
+      second = odp;
+    } else {
+      // odp is an ancestor of ndp, or the two are unrelated
+      first = odp;
+      second = ndp;
+    }
+    ilock(first);
+    if (second)
+      ilock(second);
+
+    // Directory entries can change between phase 1 and now (create,
+    // unlink, link don't take renamelock).  Look both names up again
+    // under the locks; if either changed, start over.
+    ip2 = dirlookup(odp, oname, &ooff);
+    tp2 = dirlookup(ndp, nname, &noff);
+    if (ip2 != ip || tp2 != tp) {
+      iunlock(first);
+      if (second)
+        iunlock(second);
+      first = second = 0;
+      if (ip2)
+        iput(ip2);
+      if (tp2)
+        iput(tp2);
+      r = -2; // retry
+      goto out;
+    }
+    iput(ip2);
+    ip2 = 0;
+    if (tp2) {
+      iput(tp2);
+      tp2 = 0;
+    }
+
+    // ---- phase 4: lock the children, check everything
+    ilock(ip);
+    if (tp)
+      ilock(tp);
+
+    if (ndp->nlink == 0) // new's parent was unlinked
+      goto unlock;
+    isdir = (ip->type == T_DIR);
+    if (tp) {
+      if ((tp->type == T_DIR) != isdir) // file <-> directory
+        goto unlock;
+      if (isdir && !isdirempty(tp)) // non-empty target directory
+        goto unlock;
+    } else if (isdir && odp != ndp && ndp->nlink >= NLINK_MAX) {
+      goto unlock; // ndp would gain a ".." link it can't count
+    }
+
+    // ---- phase 5: modify.  Every check has passed.
+    if (tp == 0) {
+      // Add first: dirlink is the one step that can fail (no space),
+      // and it fails before anything else has changed.
+      if (dirlink(ndp, nname, ip->inum) < 0)
+        goto unlock;
+    } else {
+      // Overwrite new's entry in place: new never disappears.
+      if (setdirent(ndp, noff, nname, ip->inum) < 0)
+        panic("rename: setdirent new");
+    }
+    if (setdirent(odp, ooff, 0, 0) < 0) // remove old's entry
+      panic("rename: setdirent old");
+
+    if (isdir && odp != ndp) {
+      // the moved directory's ".." now names its new parent
+      uint dotdot;
+      struct inode *pp = dirlookup(ip, "..", &dotdot);
+      if (pp == 0)
+        panic("rename: no ..");
+      iput(pp); // pp is odp; we hold another reference to it
+      if (setdirent(ip, dotdot, "..", ndp->inum) < 0)
+        panic("rename: setdirent ..");
+      odp->nlink--; // lost ip's ".."
+      ndp->nlink++; // gained ip's ".."
+    }
+    if (tp) {
+      if (tp->type == T_DIR)
+        ndp->nlink--; // tp's ".." is gone
+      tp->nlink--;    // the replaced inode loses one link
+      iupdate(tp);
+    }
+    iupdate(odp);
+    if (ndp != odp)
+      iupdate(ndp);
+    r = 0;
+
+  unlock:
+    if (tp)
+      iunlock(tp);
+    iunlock(ip);
+    iunlock(first);
+    if (second)
+      iunlock(second);
+    first = second = 0;
+
+  out:
+    // iput(tp) frees the replaced inode if it has no links and no open
+    // descriptors; those writes belong to this same transaction.
+    if (tp)
+      iput(tp);
+    if (ip)
+      iput(ip);
+    if (odp)
+      iput(odp);
+    if (ndp)
+      iput(ndp);
+    end_op();
+    releasesleep(&renamelock);
+
+    if (r != -2)
+      return r;
+  }
+  return -1;
 }

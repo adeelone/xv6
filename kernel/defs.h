@@ -115,6 +115,9 @@ void            release(struct spinlock*);
 void            push_off(void);
 void            pop_off(void);
 
+// sysfile.c
+void            renameinit(void);
+
 // sleeplock.c
 void            acquiresleep(struct sleeplock*);
 void            releasesleep(struct sleeplock*);
